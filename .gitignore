@@ -1,0 +1,25 @@
+# Dependencies
+**/node_modules/
+
+# Expo / build artifacts
+**/.expo/
+**/dist/
+**/web-build/
+**/*.tsbuildinfo
+
+# Secrets — never commit real secrets (DB passwords, service-role keys, etc.).
+# NOTE: Supabase publishable/anon keys are public by design, so each POC's config.ts is OK to commit.
+**/.env
+**/.env.*
+!**/.env.example
+**/*.secret.*
+**/serviceAccount*.json
+
+# Native
+**/ios/
+**/android/
+
+# Logs & OS
+**/*.log
+.DS_Store
+**/.DS_Store
