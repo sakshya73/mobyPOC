@@ -1,8 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
+  Animated,
   FlatList,
   KeyboardAvoidingView,
   LayoutAnimation,
@@ -22,17 +23,44 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-// Legend-State exposes the live sync state of an observable — we use it to drive the
-// status pill (Synced / Syncing / Offline) truthfully, straight from the engine.
 const state$ = syncState(notes$);
 
+const AVATAR_COLORS: [string, string][] = [
+  ['#e0e7ff', '#4f46e5'],
+  ['#fae8ff', '#a21caf'],
+  ['#dcfce7', '#15803d'],
+  ['#ffedd5', '#c2410c'],
+  ['#cffafe', '#0e7490'],
+];
+function avatarColor(seed: string): [string, string] {
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+  return AVATAR_COLORS[h % AVATAR_COLORS.length];
+}
+
 function relativeTime(iso?: string | null) {
-  if (!iso) return 'syncing…';
+  if (!iso) return 'just now';
   const s = Math.max(1, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
   if (s < 60) return `${s}s ago`;
   if (s < 3600) return `${Math.floor(s / 60)}m ago`;
   if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
   return new Date(iso).toLocaleDateString();
+}
+
+// A softly pulsing dot — used for the "Live" realtime indicator.
+function PulsingDot({ color = '#4ade80' }: { color?: string }) {
+  const a = useRef(new Animated.Value(0.35)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(a, { toValue: 1, duration: 850, useNativeDriver: true }),
+        Animated.timing(a, { toValue: 0.35, duration: 850, useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [a]);
+  return <Animated.View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: color, opacity: a }} />;
 }
 
 export default function App() {
@@ -46,9 +74,9 @@ export default function App() {
     .sort((a, b) => (b.created_at ?? '~').localeCompare(a.created_at ?? '~'));
 
   const status = sync?.error
-    ? { label: 'Offline', color: '#f59e0b', icon: 'cloud-offline' as const }
+    ? { label: 'Offline', color: '#fbbf24', icon: 'cloud-offline' as const }
     : sync?.isGetting || sync?.isSetting
-      ? { label: 'Syncing…', color: '#bfdbfe', icon: 'sync' as const }
+      ? { label: 'Syncing', color: '#bfdbfe', icon: 'sync' as const }
       : { label: 'Synced', color: '#86efac', icon: 'checkmark-circle' as const };
 
   const onAdd = () => {
@@ -64,24 +92,41 @@ export default function App() {
       <StatusBar style="light" />
 
       <LinearGradient
-        colors={['#4f46e5', '#2563eb']}
+        colors={['#7c3aed', '#4338ca', '#1d4ed8']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={styles.header}
       >
         <View style={styles.headerTop}>
-          <View style={{ flex: 1, paddingRight: 12 }}>
+          <View style={styles.projIcon}>
+            <Ionicons name="water" size={20} color="#fff" />
+          </View>
+          <View style={{ flex: 1, marginLeft: 12 }}>
             <Text style={styles.eyebrow}>RESTORATION PROJECT</Text>
             <Text style={styles.title}>123 Main St — Water Damage</Text>
           </View>
-          <View style={styles.pill}>
+          <View style={styles.syncPill}>
             <Ionicons name={status.icon} size={13} color={status.color} />
-            <Text style={[styles.pillText, { color: status.color }]}>{status.label}</Text>
+            <Text style={[styles.syncText, { color: status.color }]}>{status.label}</Text>
           </View>
         </View>
-        <Text style={styles.sub}>
-          {notes.length} field note{notes.length === 1 ? '' : 's'} · offline-first · realtime
-        </Text>
+
+        <View style={styles.chips}>
+          <View style={styles.chip}>
+            <PulsingDot />
+            <Text style={styles.chipText}>Live</Text>
+          </View>
+          <View style={styles.chip}>
+            <Ionicons name="cloud-offline-outline" size={12} color="rgba(255,255,255,0.9)" />
+            <Text style={styles.chipText}>Offline-ready</Text>
+          </View>
+          <View style={styles.chip}>
+            <Ionicons name="albums-outline" size={12} color="rgba(255,255,255,0.9)" />
+            <Text style={styles.chipText}>
+              {notes.length} note{notes.length === 1 ? '' : 's'}
+            </Text>
+          </View>
+        </View>
       </LinearGradient>
 
       <FlatList
@@ -91,32 +136,49 @@ export default function App() {
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={
           <View style={styles.empty}>
-            <Ionicons name="document-text-outline" size={42} color="#cbd5e1" />
-            <Text style={styles.emptyText}>No field notes yet</Text>
-            <Text style={styles.emptyHint}>Add one below — it works in airplane mode and syncs automatically.</Text>
+            <View style={styles.emptyCircle}>
+              <Ionicons name="clipboard-outline" size={34} color="#818cf8" />
+            </View>
+            <Text style={styles.emptyTitle}>No field notes yet</Text>
+            <Text style={styles.emptyHint}>
+              Add the first one below — it works in airplane mode and syncs the moment you're back online.
+            </Text>
           </View>
         }
         renderItem={({ item }) => {
           const pending = !item.created_at;
+          const [bg, fg] = avatarColor(item.text);
           return (
-            <Pressable onLongPress={() => deleteNote(item.id)} style={styles.card}>
-              <View style={[styles.accent, { backgroundColor: pending ? '#f59e0b' : '#6366f1' }]} />
-              <View style={styles.cardBody}>
-                <Text style={styles.cardText}>{item.text}</Text>
-                <View style={styles.cardMeta}>
-                  <View style={styles.avatar}>
-                    <Text style={styles.avatarText}>SA</Text>
-                  </View>
-                  <Text style={styles.author}>Technician</Text>
-                  <Text style={styles.dot}>·</Text>
-                  <Text style={styles.time}>{relativeTime(item.created_at)}</Text>
-                  <View style={{ flex: 1 }} />
-                  <Ionicons
-                    name={pending ? 'time-outline' : 'checkmark-done'}
-                    size={16}
-                    color={pending ? '#f59e0b' : '#22c55e'}
-                  />
+            <Pressable
+              onLongPress={() => {
+                LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                deleteNote(item.id);
+              }}
+              style={({ pressed }) => [styles.card, pressed && { transform: [{ scale: 0.99 }] }]}
+            >
+              <View style={styles.cardTop}>
+                <View style={[styles.avatar, { backgroundColor: bg }]}>
+                  <Text style={[styles.avatarText, { color: fg }]}>SA</Text>
                 </View>
+                <View style={{ flex: 1, marginLeft: 10 }}>
+                  <Text style={styles.cardName}>Technician</Text>
+                  <Text style={styles.cardTime}>{relativeTime(item.created_at)}</Text>
+                </View>
+                {pending ? (
+                  <View style={styles.pendingTag}>
+                    <Ionicons name="time-outline" size={12} color="#b45309" />
+                    <Text style={styles.pendingText}>Syncing</Text>
+                  </View>
+                ) : (
+                  <Ionicons name="checkmark-done" size={18} color="#22c55e" />
+                )}
+              </View>
+
+              <Text style={styles.cardText}>{item.text}</Text>
+
+              <View style={styles.typeChip}>
+                <Ionicons name="document-text-outline" size={12} color="#64748b" />
+                <Text style={styles.typeChipText}>Note</Text>
               </View>
             </Pressable>
           );
@@ -125,20 +187,25 @@ export default function App() {
 
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={styles.inputBar}>
-          <TextInput
-            style={styles.input}
-            placeholder="Add a field note…"
-            placeholderTextColor="#94a3b8"
-            value={text}
-            onChangeText={setText}
-            onSubmitEditing={onAdd}
-            returnKeyType="send"
-          />
+          <View style={styles.inputWrap}>
+            <Ionicons name="create-outline" size={18} color="#94a3b8" />
+            <TextInput
+              style={styles.input}
+              placeholder="Add a field note…"
+              placeholderTextColor="#94a3b8"
+              value={text}
+              onChangeText={setText}
+              onSubmitEditing={onAdd}
+              returnKeyType="send"
+            />
+          </View>
           <Pressable
-            style={({ pressed }) => [styles.send, pressed && { opacity: 0.9, transform: [{ scale: 0.95 }] }]}
             onPress={onAdd}
+            style={({ pressed }) => [pressed && { opacity: 0.9, transform: [{ scale: 0.94 }] }]}
           >
-            <Ionicons name="arrow-up" size={22} color="#fff" />
+            <LinearGradient colors={['#6366f1', '#2563eb']} style={styles.send}>
+              <Ionicons name="arrow-up" size={22} color="#fff" />
+            </LinearGradient>
           </Pressable>
         </View>
       </KeyboardAvoidingView>
@@ -152,20 +219,27 @@ const styles = StyleSheet.create({
   header: {
     paddingTop: 60,
     paddingHorizontal: 20,
-    paddingBottom: 20,
-    borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 24,
-    shadowColor: '#1e1b4b',
-    shadowOpacity: 0.25,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 6,
+    paddingBottom: 18,
+    borderBottomLeftRadius: 28,
+    borderBottomRightRadius: 28,
+    shadowColor: '#312e81',
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 8,
   },
   headerTop: { flexDirection: 'row', alignItems: 'center' },
-  eyebrow: { fontSize: 11, fontWeight: '800', letterSpacing: 1.2, color: 'rgba(255,255,255,0.65)' },
-  title: { fontSize: 19, fontWeight: '800', color: '#fff', marginTop: 3 },
-  sub: { fontSize: 12.5, color: 'rgba(255,255,255,0.8)', marginTop: 12, fontWeight: '500' },
-  pill: {
+  projIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 13,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  eyebrow: { fontSize: 10.5, fontWeight: '800', letterSpacing: 1.3, color: 'rgba(255,255,255,0.6)' },
+  title: { fontSize: 18, fontWeight: '800', color: '#fff', marginTop: 2 },
+  syncPill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
@@ -174,42 +248,73 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: 'rgba(255,255,255,0.16)',
   },
-  pillText: { fontSize: 12, fontWeight: '700' },
+  syncText: { fontSize: 12, fontWeight: '700' },
+
+  chips: { flexDirection: 'row', gap: 8, marginTop: 16 },
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.13)',
+  },
+  chipText: { fontSize: 11.5, fontWeight: '600', color: 'rgba(255,255,255,0.95)' },
 
   list: { padding: 16, paddingBottom: 24, gap: 12, flexGrow: 1 },
   card: {
-    flexDirection: 'row',
     backgroundColor: '#fff',
-    borderRadius: 16,
-    overflow: 'hidden',
+    borderRadius: 18,
+    padding: 16,
     borderWidth: 1,
     borderColor: '#eef2f7',
     shadowColor: '#0f172a',
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.07,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
     elevation: 2,
   },
-  accent: { width: 4 },
-  cardBody: { flex: 1, padding: 14 },
-  cardText: { fontSize: 15.5, color: '#0f172a', lineHeight: 22, fontWeight: '500' },
-  cardMeta: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 12 },
-  avatar: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: '#e0e7ff',
+  cardTop: { flexDirection: 'row', alignItems: 'center' },
+  avatar: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
+  avatarText: { fontSize: 12, fontWeight: '800' },
+  cardName: { fontSize: 13.5, fontWeight: '700', color: '#1e293b' },
+  cardTime: { fontSize: 11.5, color: '#94a3b8', marginTop: 1 },
+  pendingTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#fef3c7',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  pendingText: { fontSize: 11, fontWeight: '700', color: '#b45309' },
+  cardText: { fontSize: 15.5, color: '#0f172a', lineHeight: 22, fontWeight: '500', marginTop: 12 },
+  typeChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    alignSelf: 'flex-start',
+    backgroundColor: '#f1f5f9',
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 8,
+    marginTop: 12,
+  },
+  typeChipText: { fontSize: 11, fontWeight: '600', color: '#64748b' },
+
+  empty: { alignItems: 'center', paddingTop: 80, gap: 10 },
+  emptyCircle: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    backgroundColor: '#eef2ff',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarText: { fontSize: 10, fontWeight: '800', color: '#4f46e5' },
-  author: { fontSize: 12, fontWeight: '600', color: '#64748b' },
-  dot: { color: '#cbd5e1' },
-  time: { fontSize: 12, color: '#94a3b8' },
-
-  empty: { alignItems: 'center', paddingTop: 90, gap: 8 },
-  emptyText: { fontSize: 16, fontWeight: '700', color: '#64748b' },
-  emptyHint: { fontSize: 13, color: '#94a3b8', textAlign: 'center', paddingHorizontal: 48 },
+  emptyTitle: { fontSize: 16.5, fontWeight: '800', color: '#475569', marginTop: 4 },
+  emptyHint: { fontSize: 13, color: '#94a3b8', textAlign: 'center', paddingHorizontal: 44, lineHeight: 19 },
 
   inputBar: {
     flexDirection: 'row',
@@ -217,31 +322,31 @@ const styles = StyleSheet.create({
     gap: 10,
     paddingHorizontal: 16,
     paddingTop: 12,
-    paddingBottom: 20,
+    paddingBottom: 22,
     backgroundColor: '#fff',
     borderTopWidth: 1,
     borderTopColor: '#e2e8f0',
   },
-  input: {
+  inputWrap: {
     flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
     backgroundColor: '#f1f5f9',
     borderRadius: 14,
-    paddingHorizontal: 16,
-    paddingVertical: 13,
-    fontSize: 15,
-    color: '#0f172a',
+    paddingHorizontal: 14,
   },
+  input: { flex: 1, paddingVertical: 13, fontSize: 15, color: '#0f172a' },
   send: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    backgroundColor: '#2563eb',
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#2563eb',
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 4,
+    shadowOpacity: 0.45,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 5,
   },
 });
