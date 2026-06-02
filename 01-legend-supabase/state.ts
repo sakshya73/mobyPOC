@@ -59,7 +59,9 @@ export const notes$ = observable(
 // up when there's a connection. No manual push/pull, no outbox.
 export function addNote(text: string) {
   const id = Crypto.randomUUID();
-  notes$[id].set({ id, text });
+  // Stamp created_at locally so the note sorts correctly (newest-first) *immediately*,
+  // before it syncs. The DB's handle_times trigger sets the authoritative value on the server.
+  notes$[id].set({ id, text, created_at: new Date().toISOString() });
 }
 
 // Soft-delete (tombstone) — also syncs.
