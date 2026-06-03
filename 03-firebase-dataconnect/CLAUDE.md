@@ -2,7 +2,7 @@
 
 # CLAUDE.md — POC 3 (Firebase Data Connect)
 
-Throwaway POC to evaluate the offline-sync **feel** for Moby. Keep it **minimal**.
+Lightweight POC to evaluate the offline-sync **feel** for Moby. Keep it **minimal**.
 
 **Status: evaluated & ruled out for Moby** — Firebase has no single product that is relational *and*
 offline *and* realtime. Decision + reasoning: `../POC3_FIREBASE_FINDINGS.md`. This folder is the

@@ -2,7 +2,7 @@
 
 # CLAUDE.md — POC 2 (PowerSync + Supabase)
 
-Throwaway POC to evaluate the offline-sync **feel** for Moby with **PowerSync** as the engine, for a
+Lightweight POC to evaluate the offline-sync **feel** for Moby with **PowerSync** as the engine, for a
 head-to-head against POC 1 (Legend-State). Keep it **minimal**.
 
 ## Purpose

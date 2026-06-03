@@ -2,7 +2,7 @@
 
 # CLAUDE.md — POC 1 (Legend-State + Supabase)
 
-Throwaway POC to evaluate the offline-sync **feel** for Moby. Keep it **minimal**.
+Lightweight POC to evaluate the offline-sync **feel** for Moby. Keep it **minimal**.
 
 ## Purpose
 One screen (list + add notes + **photos**), offline-first + realtime, via Legend-State's

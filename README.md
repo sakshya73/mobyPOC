@@ -1,6 +1,6 @@
 # Moby — Offline-Sync POCs
 
-Three lightweight, **throwaway** Expo apps that each build the *same* tiny offline-first app
+Three lightweight, **exploratory** Expo apps that each build the *same* tiny offline-first app
 with a *different* sync stack — so we can compare the "feel" of each and pick the sync layer
 for Moby's MVP. (Requested by the client to evaluate options before committing.)
 
