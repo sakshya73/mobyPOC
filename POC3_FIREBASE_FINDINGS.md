@@ -32,6 +32,18 @@ A backend **alone is online‑only**; offline and realtime come from the layers 
 - **The blocker is the model:** no realtime, and offline‑first would be a **hand‑built bolt‑on** (a Legend‑State adapter — SQL Connect is *operation‑based*, so RxDB's GraphQL replication doesn't fit). Net result: more work than Supabase, still **no realtime**, and no relational advantage.
 - **Firestore** would give offline + realtime, but it's **NoSQL** — it breaks Moby's relational model (no joins/foreign keys; you'd denormalize and fan‑out).
 
+## "But can't Legend‑State handle the offline part?"
+Yes — and that was never the problem. Legend‑State + SQL Connect *would* give offline: Legend‑State's
+local store + write queue + optimistic writes, wiring `get`→`ListNotes` and `set`→`CreateNote` (the spike
+proved those calls run in RN). That's the **⚠️ DIY** in the scorecard, not a ❌.
+
+The wall is **realtime**, and **Legend‑State doesn't create it.** In POC 1 the realtime came from
+**Supabase Realtime** — the websocket Legend‑State subscribes to. SQL Connect has **no push channel**, so
+there's nothing to subscribe to. The only fallback is **polling** (re‑query on a timer / on foreground),
+which means lag (30s+ stale across devices) and battery/network cost — not realtime. So
+**Legend‑State + SQL Connect = offline ✅ · relational ✅ · realtime ❌**, which still fails Moby's
+requirement.
+
 ## Why Firebase can't meet all three
 Firebase forces a choice: **Firestore** (offline + realtime, but NoSQL) **or** **SQL Connect** (relational, but online‑only). There is **no Firebase product that is relational *and* offline *and* realtime.** Supabase + a sync engine is all three at once.
 
