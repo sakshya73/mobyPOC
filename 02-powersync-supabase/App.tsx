@@ -8,6 +8,7 @@ import {
   FlatList,
   KeyboardAvoidingView,
   LayoutAnimation,
+  LogBox,
   Platform,
   Pressable,
   Text,
@@ -25,6 +26,10 @@ import { styles } from './styles';
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
+
+// PowerSync closes its idle sync WebSocket after ~30s offline and reconnects — expected behaviour, not
+// a failure. Silence the dev-only LogBox red screen so it doesn't look like a crash during the demo.
+LogBox.ignoreLogs(['No data received on WebSocket']);
 
 // Photo is wired (image button → picker → Supabase Storage). Voice stays parked behind voiceComingSoon.
 function PulsingDot({ color = '#4ade80' }: { color?: string }) {
@@ -54,9 +59,24 @@ function Screen() {
      FROM notes n
      LEFT JOIN local_media m ON m.id = n.id
      WHERE n.deleted = 0 OR n.deleted IS NULL
-     ORDER BY n.created_at DESC, n.id DESC`,
+     ORDER BY replace(n.created_at, 'T', ' ') DESC, n.id DESC`,
   );
   const status = useStatus();
+
+  // Per-note sync state: a note stays "pending" until its local write leaves PowerSync's upload queue
+  // (i.e. has actually been uploaded). Read-only peek at the CRUD queue; refresh when notes/status change.
+  const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const batch = await db.getCrudBatch(1000);
+      const ids = new Set((batch?.crud ?? []).filter((e) => e.table === 'notes').map((e) => e.id));
+      if (!cancelled) setPendingIds(ids);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [notes, status]);
 
   // Re-upload anything captured offline: once we reconnect, and whenever the app returns to foreground.
   useEffect(() => {
@@ -151,7 +171,7 @@ function Screen() {
               item={item}
               mediaUri={mediaUri}
               uploading={uploading}
-              pending={false}
+              pending={pendingIds.has(item.id)}
               onDelete={() => void deleteNote(item.id)}
             />
           );

@@ -20,11 +20,16 @@ export function avatarColor(seed: string): [string, string] {
 // "12m ago" style relative time. A missing timestamp (not yet synced) reads as "just now".
 export function relativeTime(iso?: string | null) {
   if (!iso) return 'just now';
-  const s = Math.max(1, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
+  // Normalize to ISO-UTC: a tz-less SQLite string ("YYYY-MM-DD HH:MM:SS") is otherwise parsed as LOCAL
+  // time, which made fresh offline notes appear hours in the past. Treat a missing zone as UTC.
+  let t = iso.includes('T') ? iso : iso.replace(' ', 'T');
+  if (!/[zZ]|[+-]\d\d:?\d\d$/.test(t)) t += 'Z';
+  const ms = new Date(t).getTime();
+  const s = Math.max(1, Math.floor((Date.now() - ms) / 1000));
   if (s < 60) return `${s}s ago`;
   if (s < 3600) return `${Math.floor(s / 60)}m ago`;
   if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
-  return new Date(iso).toLocaleDateString();
+  return new Date(t).toLocaleDateString();
 }
 
 // Static bar heights for the (decorative) voice waveform.

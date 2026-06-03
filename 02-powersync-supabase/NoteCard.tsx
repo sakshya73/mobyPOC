@@ -46,7 +46,7 @@ export function NoteCard({ item, mediaUri, uploading, pending, onDelete }: Props
         ) : pending ? (
           <View style={styles.uploadTag}>
             <Ionicons name="time-outline" size={12} color="#b45309" />
-            <Text style={styles.uploadText}>Syncing</Text>
+            <Text style={styles.uploadText}>Pending</Text>
           </View>
         ) : (
           <Ionicons name="checkmark-done" size={18} color="#22c55e" />

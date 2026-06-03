@@ -61,8 +61,11 @@ export function connectPowerSync() {
 // `datetime('now')` are built-in SQLite functions. created_at is set locally so the note sorts
 // newest-first immediately (no Legend-State "insert vs update" gotcha here — PowerSync tracks ops).
 export async function addNote(text: string) {
-  await db.execute("INSERT INTO notes (id, text, created_at) VALUES (uuid(), ?, datetime('now'))", [text]);
+  // ISO-8601 UTC (with the `T` and `Z`) so it sorts + parses consistently with server-synced rows.
+  // Plain datetime('now') gives "YYYY-MM-DD HH:MM:SS" — space-separated and tz-less — which sorts below
+  // the server's ISO strings (note sinks to the bottom) and is misread as local time ("5h ago").
+  await db.execute("INSERT INTO notes (id, text, created_at) VALUES (uuid(), ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))", [text]);
 }
 export async function deleteNote(id: string) {
-  await db.execute("UPDATE notes SET deleted = 1, updated_at = datetime('now') WHERE id = ?", [id]);
+  await db.execute("UPDATE notes SET deleted = 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?", [id]);
 }
