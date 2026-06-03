@@ -161,8 +161,9 @@ function Screen() {
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={styles.inputBar}>
           <View style={styles.inputWrap}>
-            <Pressable onPress={onPhoto} hitSlop={8}>
-              <Ionicons name="image-outline" size={22} color="#cbd5e1" />
+            {/* Photo is active → filled brand-indigo icon. Mic is parked → muted/disabled-looking. */}
+            <Pressable onPress={onPhoto} hitSlop={8} style={({ pressed }) => pressed && { opacity: 0.5 }}>
+              <Ionicons name="image" size={22} color="#6366f1" />
             </Pressable>
             <Pressable onPress={voiceComingSoon} hitSlop={8}>
               <Ionicons name="mic-outline" size={22} color="#cbd5e1" />
