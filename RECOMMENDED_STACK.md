@@ -47,7 +47,7 @@ Supabase has **no native offline in 2026** — you pair it with a sync engine. O
 | Media upload | **expo‑file‑system** streaming + presigned URLs + **expo‑background‑task** | Background, retryable, offline‑durable |
 | Audio | **expo‑audio** | Record voice notes → upload → transcribe |
 | Location | **expo‑location** + **expo‑task‑manager** | Geofenced clock‑in + 5‑min background tracking |
-| Push | **expo‑notifications + FCM** | COE/eval decision; clear token on logout |
+| Push | **expo‑notifications + FCM** | Standard RN push path; clear token on logout |
 | i18n | **react‑i18next** | EN → ES → FR |
 | Backend | **NestJS** (TypeScript, typed client SDK) on **Cloud Run** | Structured + DI + a generated typed SDK — scales with a team; control plane + business logic. (Hono / Supabase Edge Functions if you want lighter) |
 | Database | **Postgres** via **Supabase** | Relational; managed; the Postgres PowerSync taps |
