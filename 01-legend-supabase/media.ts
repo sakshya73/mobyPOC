@@ -5,12 +5,12 @@
 // state layer. Only the METADATA (media_type, storage_path) syncs via Legend-State;
 // the binary file goes to Supabase Storage on its own track.
 // ──────────────────────────────────────────────────────────────────────────────
-import { decode } from 'base64-arraybuffer';
-import { File } from 'expo-file-system';
+import { File, UploadType } from 'expo-file-system';
 import * as ImagePicker from 'expo-image-picker';
 import * as Crypto from 'expo-crypto';
 import { observable } from '@legendapp/state';
 import { notes$, supabase } from './state';
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config';
 
 const BUCKET = 'media';
 
@@ -23,24 +23,35 @@ export function mediaPublicUrl(storagePath: string) {
   return supabase.storage.from(BUCKET).getPublicUrl(storagePath).data.publicUrl;
 }
 
-// Read the local file's bytes and upload them to Supabase Storage.
-// IMPORTANT: File.arrayBuffer() hangs in React Native (upload sticks on "Uploading" forever),
-// so we use the native base64() read + base64-arraybuffer decode — the proven RN pattern that
-// successfully uploaded our first clip. `as any` because base64() is a native method that the
-// expo-file-system TypeScript types omit (only arrayBuffer() is typed, and it's the broken one).
+// Upload the file to Supabase Storage by STREAMING it natively (expo-file-system's File.upload
+// posts the bytes straight from disk via the OS networking stack — NSURLSession on iOS).
+//
+// Why not supabase-js / fetch? RN's fetch loads the whole image into a JS ArrayBuffer and POSTs it
+// in one shot; iOS drops multi-MB bodies mid-flight with "The network connection was lost", so the
+// blob never lands and the card sticks on "Uploading". The native streamed upload doesn't have that
+// failure mode. We hit Storage's REST endpoint directly with the anon key (RLS authorises it) —
+// verified returning HTTP 200 against this bucket.
 async function uploadFile(localUri: string, storagePath: string, contentType: string) {
-  const bytes = decode(await (new File(localUri) as any).base64());
-  // Supabase Storage uploads from RN occasionally fail transiently ("fetch failed: cannot parse
-  // response"). Retry a few times with backoff so a network blip self-heals instead of leaving
-  // the card stuck on "Uploading".
+  const url = `${SUPABASE_URL}/storage/v1/object/${BUCKET}/${storagePath}`;
   let lastError: unknown;
   for (let attempt = 1; attempt <= 4; attempt++) {
-    const { error } = await supabase.storage
-      .from(BUCKET)
-      .upload(storagePath, bytes, { contentType, upsert: true });
-    if (!error) return;
-    lastError = error;
-    console.log(`[media] upload attempt ${attempt} failed, retrying…`, (error as any)?.message);
+    try {
+      const res = await new File(localUri).upload(url, {
+        httpMethod: 'POST',
+        uploadType: UploadType.BINARY_CONTENT,
+        headers: {
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+          'Content-Type': contentType,
+          'x-upsert': 'true',
+        },
+      });
+      if (res.status >= 200 && res.status < 300) return;
+      lastError = new Error(`Supabase Storage HTTP ${res.status}: ${(res.body || '').slice(0, 200)}`);
+    } catch (e) {
+      lastError = e;
+    }
+    console.log(`[media] upload attempt ${attempt} failed, retrying…`, (lastError as any)?.message);
     await new Promise((r) => setTimeout(r, attempt * 700));
   }
   throw lastError;
