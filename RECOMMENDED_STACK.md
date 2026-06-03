@@ -25,7 +25,7 @@ combination. Nothing on the list is left to "we'll figure it out later."
 | **Custom camera** (photo/video, flash, zoom) | react‑native‑vision‑camera |
 | **Photo annotation** (draw / mark on images) | @shopify/react‑native‑skia |
 | **Large uploads** (offline → background → retry) | expo‑file‑system + presigned URLs + expo‑background‑task |
-| **Voice notes → transcription** | expo‑audio → Whisper / Google STT (async via NestJS) |
+| **Voice notes → transcription** | expo‑audio → server transcription on upload (Whisper / Google STT); optional on‑device (whisper.rn) for instant offline text |
 | **AI‑native** structuring of field info | Gemini / Claude via NestJS |
 | **GPS** clock‑in (50 m geofence) + 5‑min tracking | expo‑location + expo‑task‑manager |
 | **Push** notifications | expo‑notifications + FCM |
@@ -48,6 +48,9 @@ combination. Nothing on the list is left to "we'll figure it out later."
 | Location | **expo‑location** + **expo‑task‑manager** | Geofenced clock‑in + background tracking |
 | Push | **expo‑notifications + FCM** | Standard RN push; clear token on logout |
 | i18n | **react‑i18next** | EN → ES → FR |
+| Server‑state | **TanStack Query** | Caching + retries + loading states for non‑synced NestJS calls (presigned URLs, cloud functions) — what Zustand isn't for |
+| Observability | **Sentry** | Crash + error reporting that **caches offline** and flushes on reconnect |
+| OTA updates | **Expo EAS Update** | Ship JS/asset fixes to the field instantly (no store review) |
 | Backend | **NestJS** (Cloud Run) | Typed API + generated client SDK; the control plane |
 | Database | **Supabase Postgres** | Relational, managed |
 | Sync service | **PowerSync Cloud** | Managed; self‑hostable later |
@@ -120,9 +123,19 @@ graph TB
 (validated, idempotent writes + auth + presigned URLs + business logic). The app reads/writes local
 SQLite; PowerSync streams Postgres down and your writes go up through NestJS.
 
+## Production & DX layers
+
+Beyond the data flow, these make it enterprise‑ready:
+
+- **Server‑state — TanStack Query.** The triad: **PowerSync** = synced offline data · **TanStack Query** = non‑synced server calls (presigned URLs, AI triggers, admin actions) with caching + retries for spotty networks · **Zustand** = pure UI state. Three jobs, no overlap.
+- **Observability — Sentry** (+ GCP Cloud Logging/Trace for NestJS). Offline‑first hides failures — a stalled background sync or a local‑query crash is invisible until reconnect. Sentry **caches errors on device and flushes them on reconnect**, plus crash + performance. (Datadog RUM is a heavier enterprise add for later.)
+- **OTA updates — Expo EAS Update.** Push JS/asset fixes to field devices instantly, skipping store review (native‑module changes still need a build). Key for fast AI/UX iteration.
+- **Edge AI (optional, Phase 2) — on‑device transcription.** `whisper.rn` transcribes voice notes **offline** so text is instant in a basement; the LLM still structures it server‑side on reconnect. Trade‑offs: the model adds ~75–150 MB to the app, on‑device accuracy (esp. Spanish) is lower, and you still sync the original audio for the record — so it's an enhancement over the server baseline, not a replacement.
+- **UI — Glue Stack (kept).** Tamagui is a strong compile‑time‑optimized alternative, but UI‑lib perf isn't the bottleneck here (long lists + the Skia canvas are, and those are optimized directly) and your team prefers Glue Stack. Reconsider Tamagui only if you want one component codebase shared across Next.js web + RN.
+
 ## Bottom line
 
 This is the **fastest path that meets all four hard requirements at once** — offline, relational,
-realtime, multi‑tenant — on **Google Cloud**, with **your own Postgres and API** (portable, no lock‑in),
+realtime, multi‑tenant, with **your own Postgres and API** (portable, no lock‑in),
 and **already proven** in the POCs. It's Supabase for velocity, PowerSync for the offline + realtime
 Supabase lacks, and NestJS for the control you want over your data.
