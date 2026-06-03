@@ -4,6 +4,8 @@ Three lightweight, **throwaway** Expo apps that each build the *same* tiny offli
 with a *different* sync stack — so we can compare the "feel" of each and pick the sync layer
 for Moby's MVP. (Requested by the client to evaluate options before committing.)
 
+> **➡️ Conclusion → [`RECOMMENDED_STACK.md`](RECOMMENDED_STACK.md)** — the ideal end‑to‑end stack for Moby (Supabase + PowerSync + NestJS + Expo), with the full requirement→tech mapping. The POCs below are the evidence behind it.
+
 | # | Folder | Sync approach |
 |---|--------|---------------|
 | 1 | `01-legend-supabase` | Legend-State `syncedSupabase` — offline + realtime in one wiring |
