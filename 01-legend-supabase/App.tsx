@@ -3,8 +3,11 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef, useState } from 'react';
 import {
+  Alert,
   Animated,
+  AppState,
   FlatList,
+  Image,
   KeyboardAvoidingView,
   LayoutAnimation,
   Platform,
@@ -18,7 +21,10 @@ import {
 import { syncState } from '@legendapp/state';
 import { use$ } from '@legendapp/state/react';
 import { addNote, deleteNote, notes$, type Note } from './state';
+import { addPhotoNote, localMedia$, mediaPublicUrl, retryPendingUploads } from './media';
 
+// Voice capture is parked for now (the expo-audio integration is being sorted out separately).
+// Focus: photo + text + offline sync. The mic button is a gentle "coming soon" stub.
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
@@ -47,7 +53,6 @@ function relativeTime(iso?: string | null) {
   return new Date(iso).toLocaleDateString();
 }
 
-// A softly pulsing dot — used for the "Live" realtime indicator.
 function PulsingDot({ color = '#4ade80' }: { color?: string }) {
   const a = useRef(new Animated.Value(0.35)).current;
   useEffect(() => {
@@ -60,14 +65,28 @@ function PulsingDot({ color = '#4ade80' }: { color?: string }) {
     loop.start();
     return () => loop.stop();
   }, [a]);
-  return <Animated.View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: color, opacity: a }} />;
+  return <Animated.View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: color, opacity: a }} />;
 }
+
+const WAVE = [9, 15, 11, 18, 13, 7, 16, 12, 19, 10, 14, 8];
+
+const voiceComingSoon = () =>
+  Alert.alert('Voice coming soon', 'We’re focusing on photo + text + offline sync first. Voice capture is being wired up separately.');
 
 export default function App() {
   const [text, setText] = useState('');
 
   const notesMap = use$(notes$);
+  const localMap = use$(localMedia$);
   const sync = use$(state$);
+
+  useEffect(() => {
+    retryPendingUploads();
+    const sub = AppState.addEventListener('change', (s) => {
+      if (s === 'active') retryPendingUploads();
+    });
+    return () => sub.remove();
+  }, []);
 
   const notes = Object.values(notesMap ?? {})
     .filter((n): n is Note => !!n && !n.deleted)
@@ -87,16 +106,16 @@ export default function App() {
     setText('');
   };
 
+  const onPhoto = () => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    void addPhotoNote();
+  };
+
   return (
     <View style={styles.container}>
       <StatusBar style="light" />
 
-      <LinearGradient
-        colors={['#7c3aed', '#4338ca', '#1d4ed8']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.header}
-      >
+      <LinearGradient colors={['#7c3aed', '#4338ca', '#1d4ed8']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.header}>
         <View style={styles.headerTop}>
           <View style={styles.projIcon}>
             <Ionicons name="water" size={20} color="#fff" />
@@ -110,7 +129,6 @@ export default function App() {
             <Text style={[styles.syncText, { color: status.color }]}>{status.label}</Text>
           </View>
         </View>
-
         <View style={styles.chips}>
           <View style={styles.chip}>
             <PulsingDot />
@@ -140,14 +158,22 @@ export default function App() {
               <Ionicons name="clipboard-outline" size={34} color="#818cf8" />
             </View>
             <Text style={styles.emptyTitle}>No field notes yet</Text>
-            <Text style={styles.emptyHint}>
-              Add the first one below — it works in airplane mode and syncs the moment you're back online.
-            </Text>
+            <Text style={styles.emptyHint}>Add a note or photo below — it all works offline and syncs automatically.</Text>
           </View>
         }
         renderItem={({ item }) => {
-          const pending = !item.created_at;
-          const [bg, fg] = avatarColor(item.text);
+          const [bg, fg] = avatarColor(item.id);
+          const local = localMap?.[item.id];
+          const mediaUri = local ?? (item.storage_path ? mediaPublicUrl(item.storage_path) : undefined);
+          const uploading = !!item.media_type && !item.storage_path;
+          // Only flag "Syncing" when we're actually offline. Online, the row reaches Supabase in
+          // ~1s; the server-assigned created_at just echoes back on the next pull, so a missing
+          // created_at while online means "synced, timestamp not echoed yet" → show it as synced.
+          const pending = !item.created_at && !!sync?.error;
+          const typeLabel = item.media_type === 'photo' ? 'Photo' : item.media_type === 'audio' ? 'Voice' : 'Note';
+          const typeIcon =
+            item.media_type === 'photo' ? 'image-outline' : item.media_type === 'audio' ? 'mic-outline' : 'document-text-outline';
+
           return (
             <Pressable
               onLongPress={() => {
@@ -164,21 +190,42 @@ export default function App() {
                   <Text style={styles.cardName}>Technician</Text>
                   <Text style={styles.cardTime}>{relativeTime(item.created_at)}</Text>
                 </View>
-                {pending ? (
-                  <View style={styles.pendingTag}>
+                {uploading ? (
+                  <View style={styles.uploadTag}>
+                    <Ionicons name="cloud-upload-outline" size={12} color="#b45309" />
+                    <Text style={styles.uploadText}>Uploading</Text>
+                  </View>
+                ) : pending ? (
+                  <View style={styles.uploadTag}>
                     <Ionicons name="time-outline" size={12} color="#b45309" />
-                    <Text style={styles.pendingText}>Syncing</Text>
+                    <Text style={styles.uploadText}>Syncing</Text>
                   </View>
                 ) : (
                   <Ionicons name="checkmark-done" size={18} color="#22c55e" />
                 )}
               </View>
 
-              <Text style={styles.cardText}>{item.text}</Text>
+              {item.media_type === 'photo' && mediaUri ? (
+                <Image source={{ uri: mediaUri }} style={styles.photo} />
+              ) : item.media_type === 'audio' ? (
+                <Pressable onPress={voiceComingSoon} style={styles.audioRow}>
+                  <View style={styles.playBtn}>
+                    <Ionicons name="play" size={15} color="#fff" />
+                  </View>
+                  <View style={styles.wave}>
+                    {WAVE.map((h, i) => (
+                      <View key={i} style={[styles.waveBar, { height: h }]} />
+                    ))}
+                  </View>
+                  <Text style={styles.audioLabel}>Voice note</Text>
+                </Pressable>
+              ) : item.text ? (
+                <Text style={styles.cardText}>{item.text}</Text>
+              ) : null}
 
               <View style={styles.typeChip}>
-                <Ionicons name="document-text-outline" size={12} color="#64748b" />
-                <Text style={styles.typeChipText}>Note</Text>
+                <Ionicons name={typeIcon} size={12} color="#64748b" />
+                <Text style={styles.typeChipText}>{typeLabel}</Text>
               </View>
             </Pressable>
           );
@@ -188,7 +235,12 @@ export default function App() {
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={styles.inputBar}>
           <View style={styles.inputWrap}>
-            <Ionicons name="create-outline" size={18} color="#94a3b8" />
+            <Pressable onPress={onPhoto} hitSlop={8}>
+              <Ionicons name="image-outline" size={22} color="#6366f1" />
+            </Pressable>
+            <Pressable onPress={voiceComingSoon} hitSlop={8}>
+              <Ionicons name="mic-outline" size={22} color="#cbd5e1" />
+            </Pressable>
             <TextInput
               style={styles.input}
               placeholder="Add a field note…"
@@ -199,10 +251,7 @@ export default function App() {
               returnKeyType="send"
             />
           </View>
-          <Pressable
-            onPress={onAdd}
-            style={({ pressed }) => [pressed && { opacity: 0.9, transform: [{ scale: 0.94 }] }]}
-          >
+          <Pressable onPress={onAdd} style={({ pressed }) => [pressed && { opacity: 0.9, transform: [{ scale: 0.94 }] }]}>
             <LinearGradient colors={['#6366f1', '#2563eb']} style={styles.send}>
               <Ionicons name="arrow-up" size={22} color="#fff" />
             </LinearGradient>
@@ -216,137 +265,43 @@ export default function App() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f1f5f9' },
 
-  header: {
-    paddingTop: 60,
-    paddingHorizontal: 20,
-    paddingBottom: 18,
-    borderBottomLeftRadius: 28,
-    borderBottomRightRadius: 28,
-    shadowColor: '#312e81',
-    shadowOpacity: 0.3,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 8,
-  },
+  header: { paddingTop: 60, paddingHorizontal: 20, paddingBottom: 18, borderBottomLeftRadius: 28, borderBottomRightRadius: 28, shadowColor: '#312e81', shadowOpacity: 0.3, shadowRadius: 16, shadowOffset: { width: 0, height: 8 }, elevation: 8 },
   headerTop: { flexDirection: 'row', alignItems: 'center' },
-  projIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 13,
-    backgroundColor: 'rgba(255,255,255,0.18)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  projIcon: { width: 42, height: 42, borderRadius: 13, backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center' },
   eyebrow: { fontSize: 10.5, fontWeight: '800', letterSpacing: 1.3, color: 'rgba(255,255,255,0.6)' },
   title: { fontSize: 18, fontWeight: '800', color: '#fff', marginTop: 2 },
-  syncPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.16)',
-  },
+  syncPill: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.16)' },
   syncText: { fontSize: 12, fontWeight: '700' },
-
   chips: { flexDirection: 'row', gap: 8, marginTop: 16 },
-  chip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.13)',
-  },
+  chip: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.13)' },
   chipText: { fontSize: 11.5, fontWeight: '600', color: 'rgba(255,255,255,0.95)' },
 
   list: { padding: 16, paddingBottom: 24, gap: 12, flexGrow: 1 },
-  card: {
-    backgroundColor: '#fff',
-    borderRadius: 18,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#eef2f7',
-    shadowColor: '#0f172a',
-    shadowOpacity: 0.07,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 2,
-  },
+  card: { backgroundColor: '#fff', borderRadius: 18, padding: 16, borderWidth: 1, borderColor: '#eef2f7', shadowColor: '#0f172a', shadowOpacity: 0.07, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 2 },
   cardTop: { flexDirection: 'row', alignItems: 'center' },
   avatar: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
   avatarText: { fontSize: 12, fontWeight: '800' },
   cardName: { fontSize: 13.5, fontWeight: '700', color: '#1e293b' },
   cardTime: { fontSize: 11.5, color: '#94a3b8', marginTop: 1 },
-  pendingTag: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#fef3c7',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 999,
-  },
-  pendingText: { fontSize: 11, fontWeight: '700', color: '#b45309' },
+  uploadTag: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#fef3c7', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999 },
+  uploadText: { fontSize: 11, fontWeight: '700', color: '#b45309' },
   cardText: { fontSize: 15.5, color: '#0f172a', lineHeight: 22, fontWeight: '500', marginTop: 12 },
-  typeChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    alignSelf: 'flex-start',
-    backgroundColor: '#f1f5f9',
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-    borderRadius: 8,
-    marginTop: 12,
-  },
+  photo: { width: '100%', height: 190, borderRadius: 12, marginTop: 12, backgroundColor: '#e2e8f0' },
+  audioRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 12, backgroundColor: '#f8fafc', borderRadius: 12, padding: 12 },
+  playBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#6366f1', alignItems: 'center', justifyContent: 'center' },
+  wave: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 3, height: 24 },
+  waveBar: { width: 3, borderRadius: 2, backgroundColor: '#c7d2fe' },
+  audioLabel: { fontSize: 12, color: '#64748b', fontWeight: '600' },
+  typeChip: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start', backgroundColor: '#f1f5f9', paddingHorizontal: 9, paddingVertical: 4, borderRadius: 8, marginTop: 12 },
   typeChipText: { fontSize: 11, fontWeight: '600', color: '#64748b' },
 
   empty: { alignItems: 'center', paddingTop: 80, gap: 10 },
-  emptyCircle: {
-    width: 76,
-    height: 76,
-    borderRadius: 38,
-    backgroundColor: '#eef2ff',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  emptyCircle: { width: 76, height: 76, borderRadius: 38, backgroundColor: '#eef2ff', alignItems: 'center', justifyContent: 'center' },
   emptyTitle: { fontSize: 16.5, fontWeight: '800', color: '#475569', marginTop: 4 },
   emptyHint: { fontSize: 13, color: '#94a3b8', textAlign: 'center', paddingHorizontal: 44, lineHeight: 19 },
 
-  inputBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 22,
-    backgroundColor: '#fff',
-    borderTopWidth: 1,
-    borderTopColor: '#e2e8f0',
-  },
-  inputWrap: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#f1f5f9',
-    borderRadius: 14,
-    paddingHorizontal: 14,
-  },
+  inputBar: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 22, backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: '#e2e8f0' },
+  inputWrap: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#f1f5f9', borderRadius: 14, paddingHorizontal: 14 },
   input: { flex: 1, paddingVertical: 13, fontSize: 15, color: '#0f172a' },
-  send: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#2563eb',
-    shadowOpacity: 0.45,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 5 },
-    elevation: 5,
-  },
+  send: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center', shadowColor: '#2563eb', shadowOpacity: 0.45, shadowRadius: 10, shadowOffset: { width: 0, height: 5 }, elevation: 5 },
 });
