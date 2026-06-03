@@ -20,7 +20,7 @@ import {
 } from 'react-native';
 import { syncState } from '@legendapp/state';
 import { use$ } from '@legendapp/state/react';
-import { addNote, deleteNote, notes$, type Note } from './state';
+import { addNote, deleteNote, localOrder$, notes$, type Note } from './state';
 import { addPhotoNote, localMedia$, mediaPublicUrl, retryPendingUploads } from './media';
 
 // Voice capture is parked for now (the expo-audio integration is being sorted out separately).
@@ -78,6 +78,7 @@ export default function App() {
 
   const notesMap = use$(notes$);
   const localMap = use$(localMedia$);
+  const orderMap = use$(localOrder$);
   const sync = use$(state$);
 
   useEffect(() => {
@@ -88,9 +89,19 @@ export default function App() {
     return () => sub.remove();
   }, []);
 
+  // Reconnect → flush any pending blob uploads. sync.error clears the moment we're back online,
+  // even if the app stayed in the foreground the whole time (AppState wouldn't fire then).
+  useEffect(() => {
+    if (!sync?.error) retryPendingUploads();
+  }, [sync?.error]);
+
+  // Sort newest-first. A synced note ranks by its server created_at; a brand-new/offline note has
+  // none yet, so it ranks above everything via its local order counter (newest local addition first).
+  const PENDING_RANK = 1e15; // larger than any epoch-ms timestamp → un-synced notes float to the top
+  const rank = (n: Note) => (n.created_at ? new Date(n.created_at).getTime() : PENDING_RANK + (orderMap?.[n.id] ?? 0));
   const notes = Object.values(notesMap ?? {})
     .filter((n): n is Note => !!n && !n.deleted)
-    .sort((a, b) => (b.created_at ?? '~').localeCompare(a.created_at ?? '~'));
+    .sort((a, b) => rank(b) - rank(a));
 
   const status = sync?.error
     ? { label: 'Offline', color: '#fbbf24', icon: 'cloud-offline' as const }
@@ -166,10 +177,10 @@ export default function App() {
           const local = localMap?.[item.id];
           const mediaUri = local ?? (item.storage_path ? mediaPublicUrl(item.storage_path) : undefined);
           const uploading = !!item.media_type && !item.storage_path;
-          // Only flag "Syncing" when we're actually offline. Online, the row reaches Supabase in
-          // ~1s; the server-assigned created_at just echoes back on the next pull, so a missing
-          // created_at while online means "synced, timestamp not echoed yet" → show it as synced.
-          const pending = !item.created_at && !!sync?.error;
+          // "Syncing" = the server hasn't confirmed this row yet (it sets created_at). Show it while
+          // offline (sync.error) or during a pull (isGetting), so an offline note reads "Syncing" the
+          // instant the app reopens — but a fresh ONLINE write shows "Synced" optimistically (no lag).
+          const pending = !item.created_at && (!!sync?.error || !!sync?.isGetting);
           const typeLabel = item.media_type === 'photo' ? 'Photo' : item.media_type === 'audio' ? 'Voice' : 'Note';
           const typeIcon =
             item.media_type === 'photo' ? 'image-outline' : item.media_type === 'audio' ? 'mic-outline' : 'document-text-outline';
