@@ -8,16 +8,23 @@
 import { File, UploadType } from 'expo-file-system';
 import * as ImagePicker from 'expo-image-picker';
 import * as Crypto from 'expo-crypto';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { observable } from '@legendapp/state';
-import { notes$, supabase } from './state';
+import { observablePersistAsyncStorage } from '@legendapp/state/persist-plugins/async-storage';
+import { syncObservable } from '@legendapp/state/sync';
+import { notes$, supabase, stampOrder } from './state';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config';
 
 const BUCKET = 'media';
 
-// Local-only map: note id → device file URI. In-memory (not synced — a device file path is
-// meaningless on another device). Lets us show the photo INSTANTLY on the capturing device;
-// after upload, every device displays from the Supabase public URL instead.
+// Map: note id → device file URI. PERSISTED (survives app restarts) but NOT synced — a device file
+// path is meaningless on another device. Persistence is what makes OFFLINE media work: a photo taken
+// with no signal must survive a restart so it can still upload when the connection returns. It also
+// shows the photo instantly on the capturing device; other devices display from the Supabase URL.
 export const localMedia$ = observable<Record<string, string>>({});
+syncObservable(localMedia$, {
+  persist: { name: 'localMedia', plugin: observablePersistAsyncStorage({ AsyncStorage }) },
+});
 
 export function mediaPublicUrl(storagePath: string) {
   return supabase.storage.from(BUCKET).getPublicUrl(storagePath).data.publicUrl;
@@ -61,7 +68,8 @@ async function uploadFile(localUri: string, storagePath: string, contentType: st
 // then upload the blob in the background and record its storage_path (which also syncs).
 async function createMediaNote(localUri: string, type: 'photo' | 'audio', ext: string, contentType: string) {
   const id = Crypto.randomUUID();
-  localMedia$[id].set(localUri); // instant, offline-capable display
+  stampOrder(id); // float to the top now (no created_at yet)
+  localMedia$[id].set(localUri); // instant, offline-capable display (persisted → survives restarts)
   // No created_at — let Legend-State INSERT it and the DB trigger set the timestamp. Stamping it
   // here would make the sync issue an UPDATE (0 rows) instead of an INSERT (see addNote in state.ts).
   notes$[id].set({ id, text: '', media_type: type });
