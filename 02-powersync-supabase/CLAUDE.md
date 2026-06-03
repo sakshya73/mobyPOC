@@ -2,15 +2,58 @@
 
 # CLAUDE.md — POC 2 (PowerSync + Supabase)
 
-Throwaway POC to evaluate the offline-sync **feel** for Moby. Keep it **minimal**.
-
-**Status:** scaffolded; build pending (POC 1 first).
+Throwaway POC to evaluate the offline-sync **feel** for Moby with **PowerSync** as the engine, for a
+head-to-head against POC 1 (Legend-State). Keep it **minimal**.
 
 ## Purpose
-Same minimal list/add app as POC 1, but the sync engine is **PowerSync** (on-device SQLite ↔
-Supabase Postgres). No auth/multi-tenant/camera/GPS.
+One screen (list + add notes), offline-first, where the app reads/writes a **local SQLite DB** and
+PowerSync syncs it to the same Supabase Postgres as POC 1. NOT a full app — no auth, multi-tenant, or
+GPS. Media (photo/voice) is the next step, not wired yet (buttons stubbed). Just the sync layer.
+
+## Key files
+- `config.ts` — Supabase URL + anon key, `POWERSYNC_URL`, `POWERSYNC_TOKEN` (dev token, ~12h)
+- `state.ts` — **the heart**: PowerSync schema (`notes` + local-only `local_media`), the `PowerSyncDatabase`
+  init with an explicit `OPSqliteOpenFactory`, `connectPowerSync()`, and `addNote`/`deleteNote` via `db.execute`
+- `PowerSyncConnector.ts` — the `supabase` client + the backend `connector` (`fetchCredentials` returns
+  `{endpoint, token}`; `uploadData` applies queued local CRUD to Supabase)
+- `App.tsx` — the screen: `useQuery('SELECT … FROM notes')`, `useStatus()` pill, `PowerSyncContext.Provider`
+- `NoteCard.tsx` — presentational feed card; `ui.ts` (pure helpers) + `styles.ts` (StyleSheet)
+- `powersync.sql` — `powersync` publication + `powersync_role` (run in Supabase; logical replication)
+- `sync-rules.yaml` — Sync Streams (edition 3) config; deploy via the CLI (see Gotchas)
+
+> The `notes` table + `media` bucket are **reused from POC 1** (same Supabase project) — no table/bucket
+> SQL here. Only `powersync.sql` (replication setup) is POC-2-specific on the backend.
 
 ## Conventions
-- pnpm only. Expo SDK 56 (see AGENTS.md — check versioned docs before writing Expo code).
-- Minimal deps; nothing beyond the sync demo.
-- **Maintain this file and `README.md`** as the POC is built and the structure firms up.
+- pnpm only (`.npmrc` has `node-linker=hoisted` — required for RN native autolinking / CocoaPods).
+- Expo SDK 56 (see AGENTS.md — check versioned docs before writing Expo code).
+- Keep dependencies minimal; don't add features beyond the offline-sync demo.
+- **Maintain this file and `README.md`** whenever the structure or approach changes.
+
+## Gotchas (hard-won — do not regress)
+- **Name `OPSqliteOpenFactory` explicitly** in `new PowerSyncDatabase({ database: … })`. The SDK's
+  auto-detect uses a dynamic `require` Metro can't bundle, so it falls back to `react-native-quick-sqlite`
+  (not installed) and crashes with `Could not resolve @journeyapps/react-native-quick-sqlite`.
+- **Deploy the sync config with the CLI, not just the dashboard.** Our dashboard edit silently didn't
+  apply → the app logged `PSYNC_S2302 No sync config available` and showed **Offline / 0 notes**. Fix:
+  `npx powersync@latest deploy sync-config` (Sync Streams, edition 3). Success = `Validated and applied
+  checkpoint` in the logs.
+- **Use Sync Streams (edition 3), not legacy `bucket_definitions`.** `sync-rules.yaml` here is streams.
+- **Never declare an `id` column** in a `Table` — PowerSync auto-creates it (TEXT primary key). Booleans
+  are `column.integer` (0/1), dates are `column.text` (ISO strings). `deleted` is 0/1, not a JS boolean.
+- **`transaction.complete()` is mandatory** at the end of `uploadData`, or the upload queue stalls forever.
+- **A 4xx from `uploadData` blocks the queue permanently.** `FATAL_RESPONSE_CODES` (22xxx/23xxx/42501)
+  are treated as permanent and **discarded** (we log + return) so one bad row can't wedge all future syncs.
+- **Dev token expires (~12h).** When sync stops with an auth error, regenerate (dashboard → Client Auth
+  temporary token, or the CLI) and update `POWERSYNC_TOKEN` in `config.ts`.
+- **Native module ⇒ no Expo Go.** Use a dev build: `expo prebuild` then `expo run:ios`. After any native
+  module / `app.json` change, kill Metro and `expo start --clear` (stale cached bundle serves phantom
+  errors — same lesson as POC 1).
+- **The dev-client deep-link dialog can't be auto-tapped here.** Launch the installed build directly:
+  `xcrun simctl launch com.moby.powersync` (bypasses the "Open in Moby PowerSync?" prompt).
+- **Soft-delete, never hard-delete.** Set `deleted = 1` (tombstone); a hard `DELETE` in Postgres won't
+  propagate down as a removal to clients that already synced the row (same delta-sync lesson as POC 1).
+
+## Run
+`pnpm install && pnpm exec expo run:ios` — needs Supabase + PowerSync creds in `config.ts`, `powersync.sql`
+run in Supabase, and the sync config deployed via the CLI.
