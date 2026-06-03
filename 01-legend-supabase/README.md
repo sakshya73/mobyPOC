@@ -2,9 +2,6 @@
 
 The lightest of the three: **offline-first + realtime in ~one wiring.**
 
-> 📖 **New to Legend-State or Supabase Realtime?** Read **[HOW_IT_WORKS.md](./HOW_IT_WORKS.md)** — a full
-> walkthrough with architecture + data-flow diagrams.
-
 ## Stack
 - **Expo** (React Native) + TypeScript
 - **Supabase** — managed Postgres (the backend) + Realtime
