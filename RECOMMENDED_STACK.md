@@ -93,7 +93,9 @@ graph TB
     UI["Glue Stack + Zustand"]
     SQL[("Local SQLite — PowerSync")]
     Cap["Vision Camera + Skia · expo-location · expo-audio"]
+    TQ["TanStack Query<br/>(non-synced API calls)"]
     UI --> SQL
+    UI --> TQ
   end
   subgraph Cloud["☁️ Cloud"]
     PS["PowerSync<br/>offline + realtime stream"]
@@ -101,6 +103,10 @@ graph TB
     PG[("Supabase Postgres")]
     Store[("Storage — photos/video/audio")]
     Ext["Supabase Auth · FCM · Maps · Gemini/Whisper"]
+  end
+  subgraph Ops["Ops + DX"]
+    Sentry["Sentry<br/>offline-cached errors"]
+    EAS["EAS Update<br/>OTA (JS/assets)"]
   end
   Web["💻 Next.js admin"]
 
@@ -111,17 +117,24 @@ graph TB
   Nest --> Store
   Nest --> Ext
   Cap -->|"presigned upload"| Store
+  TQ -->|"presigned URLs · AI triggers"| Nest
   Web --> Nest
+
+  UI -.->|"errors (flush on reconnect)"| Sentry
+  Nest -.->|"traces / errors"| Sentry
+  EAS -.->|"OTA push (JS)"| UI
 
   classDef cloud fill:#dbeafe,stroke:#3b82f6;
   classDef dev fill:#ecfdf5,stroke:#10b981;
+  classDef ops fill:#fef3c7,stroke:#f59e0b;
   class PS,Nest,PG,Store,Ext cloud;
-  class UI,SQL,Cap,Web dev;
+  class UI,TQ,SQL,Cap,Web dev;
+  class Sentry,EAS ops;
 ```
 
 **Two planes:** PowerSync is the **data plane** (offline + realtime); NestJS is the **control plane**
 (validated, idempotent writes + auth + presigned URLs + business logic). The app reads/writes local
-SQLite; PowerSync streams Postgres down and your writes go up through NestJS.
+SQLite; PowerSync streams Postgres down and your writes go up through NestJS. **TanStack Query** fronts the non‑synced calls; **Sentry** + **EAS Update** are the ops/DX sidecar.
 
 ## Production & DX layers
 
