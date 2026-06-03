@@ -36,7 +36,7 @@ against the local DB, and the queue drains on reconnect.
 2. **Create a PowerSync Cloud instance** at <https://powersync.com> (free tier), connect it to Supabase
    Postgres with the **`powersync_role`** credentials (Supabase → Project Settings → Database for host).
    Copy the **instance URL** → `config.ts` → `POWERSYNC_URL`.
-3. **Deploy the sync config via the CLI** (the dashboard editor didn't take for us — see Gotchas):
+3. **Deploy the sync config via the CLI** (the dashboard editor didn't apply reliably — see Gotchas):
    ```bash
    npx powersync@latest login
    npx powersync@latest link cloud --instance-id=<id> --project-id=<id>
