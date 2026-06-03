@@ -60,7 +60,24 @@ GPS. Photo (capture + display) is wired; voice is parked behind `voiceComingSoon
   streaming — RN `fetch` drops multi-MB iOS bodies, same as POC 1). The note→device-file-URI map is a row
   in the **local-only `local_media`** table (insert the `id` explicitly to match the note); the read query
   LEFT JOINs it so the photo shows instantly on the capturing device, while other devices fetch from the
-  Storage public URL. `retryPendingUploads` (on reconnect + foreground) re-uploads photos captured offline.
+  Storage public URL. `retryPendingUploads` (on reconnect, foreground, and the NetInfo online transition)
+  re-uploads photos captured offline; guard it single-flight so overlapping triggers don't double-upload.
+- **PowerSync does NOT auto-reconnect when the network returns** — it stays disconnected until a *fresh*
+  connection is built (an app restart, or `disconnect()` then `connect()`); a bare `connect()` won't revive
+  the dead one. Wire a **NetInfo** (`@react-native-community/netinfo`) listener that does `disconnect()` →
+  `connect()` (and kicks `retryPendingUploads`) on the **offline→online transition**. Without it you must
+  reload the app to resume syncing. (This is the one real piece of plumbing offline-first needs here.)
+- **Drive the offline indicator from NetInfo, not `status.connected`.** PowerSync's connection state lags
+  (it can show **Synced** while the device is offline; the HTTP-streaming transport lags even more than the
+  default WebSocket). The OS network state is instant — use it for the Offline pill / Paused chip.
+- **Test offline/reconnect on a REAL device.** The iOS simulator's network-change detection is unreliable,
+  so reconnect can look broken there even when the code is right; on a physical device it works.
+- **Per-note sync state comes from the upload queue, not the row.** Derive "pending" from
+  `db.getCrudBatch()` (ids still in the CRUD queue), and depend on concrete `useStatus()` fields
+  (`connected`, `dataFlowStatus.uploading`, `lastSyncedAt`) so the tick clears the moment the queue drains.
+- **Write `created_at` as ISO-8601 UTC** (`strftime('%Y-%m-%dT%H:%M:%fZ','now')`), not `datetime('now')` —
+  the latter is space-separated + tz-less, so local rows sort below the server's ISO rows (notes sink to the
+  bottom) and parse as local time ("5h ago"). `relativeTime` also normalizes tz-less strings as UTC.
 
 ## Run
 `pnpm install && pnpm exec expo run:ios` — needs Supabase + PowerSync creds in `config.ts`, `powersync.sql`

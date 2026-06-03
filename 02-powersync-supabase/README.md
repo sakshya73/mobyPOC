@@ -60,6 +60,10 @@ against the local DB, and the queue drains on reconnect.
 into the app; notes typed in the app appear in Postgres). Offline writes queue locally and drain on
 reconnect. Soft-deletes (`deleted = 1`) propagate as tombstones.
 
+✅ **Robust offline-first (verified on a physical device)** — accurate Offline/Live status from a
+**NetInfo** connectivity listener; automatic reconnect + upload-queue drain when the network returns (no
+app restart); per-note **Pending → ✓✓** ticks; offline photo capture that uploads on reconnect.
+
 ✅ **Photo capture + display** — the image button picks a photo, writes the note row + a `local_media`
 row (instant on-device display), and streams the blob to Supabase Storage via POC 1's native
 `File.upload()`; the `storage_path` pointer then syncs so other devices fetch from Storage. The
