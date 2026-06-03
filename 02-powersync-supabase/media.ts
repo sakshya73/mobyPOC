@@ -16,6 +16,7 @@ import { db, supabase } from './state';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config';
 
 const BUCKET = 'media';
+let retrying = false; // single-flight guard so overlapping triggers don't re-upload the same blob
 
 export function mediaPublicUrl(storagePath: string) {
   return supabase.storage.from(BUCKET).getPublicUrl(storagePath).data.publicUrl;
@@ -84,16 +85,22 @@ export async function addPhotoNote() {
 // Re-upload anything captured offline: photo notes that have a local file but no storage_path yet.
 // Call on reconnect / app-foreground. The JOIN onto the local-only table gives us the device URI.
 export async function retryPendingUploads() {
-  const rows = await db.getAll<{ id: string; uri: string }>(
-    "SELECT n.id AS id, m.uri AS uri FROM notes n JOIN local_media m ON m.id = n.id WHERE n.media_type = 'photo' AND n.storage_path IS NULL",
-  );
-  for (const r of rows) {
-    try {
-      const path = `${r.id}.jpg`;
-      await uploadFile(r.uri, path, 'image/jpeg');
-      await db.execute("UPDATE notes SET storage_path = ?, updated_at = datetime('now') WHERE id = ?", [path, r.id]);
-    } catch {
-      /* still offline — try again next time */
+  if (retrying) return; // the interval + reconnect + foreground triggers can fire together
+  retrying = true;
+  try {
+    const rows = await db.getAll<{ id: string; uri: string }>(
+      "SELECT n.id AS id, m.uri AS uri FROM notes n JOIN local_media m ON m.id = n.id WHERE n.media_type = 'photo' AND n.storage_path IS NULL",
+    );
+    for (const r of rows) {
+      try {
+        const path = `${r.id}.jpg`;
+        await uploadFile(r.uri, path, 'image/jpeg');
+        await db.execute("UPDATE notes SET storage_path = ?, updated_at = datetime('now') WHERE id = ?", [path, r.id]);
+      } catch {
+        /* still offline — try again next time */
+      }
     }
+  } finally {
+    retrying = false;
   }
 }
