@@ -51,10 +51,12 @@ layer — never the blob. Voice capture is wired in `media.ts` (`addVoiceNote`) 
 - **Never stamp `created_at` yourself.** Legend-State treats a row *with* `created_at` as
   already-existing → it issues an UPDATE (0 rows) instead of an INSERT, so the note **silently never
   syncs**. Let the DB set it. (New notes still sort newest-first via the `?? '~'` fallback.)
-- **`File.arrayBuffer()` hangs in React Native.** Use the native `base64()` read + `base64-arraybuffer`
-  `decode()` to get the bytes for upload.
-- **Supabase Storage uploads from RN are flaky** ("fetch failed: cannot parse response") — `uploadFile`
-  **retries with backoff** so a transient blip self-heals.
+- **Upload images by STREAMING, not via `fetch`.** RN's `fetch` / supabase-js loads the whole image
+  into a JS ArrayBuffer and POSTs it in one shot; iOS drops multi-MB bodies mid-flight ("The network
+  connection was lost") so the blob never lands and the card sticks on "Uploading". `media.ts` instead
+  uses **expo-file-system `File.upload()`** to stream bytes straight from disk to Storage's REST
+  endpoint (anon key + RLS). (`File.arrayBuffer()` also hangs in RN — avoid it too.) `uploadFile` keeps
+  a small retry-with-backoff for genuine network blips.
 - **After adding/removing a native module, `expo start --clear`.** Plain HMR corrupts the bundle graph
   (a phantom `undefined is not a function` that survives every edit until a clean rebuild).
 
