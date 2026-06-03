@@ -25,6 +25,8 @@ import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config';
 export type Note = {
   id: string;
   text: string;
+  media_type?: 'photo' | 'audio' | null; // null for a plain text note
+  storage_path?: string | null; // key in the Supabase 'media' bucket; null until the blob is uploaded
   created_at?: string | null;
   updated_at?: string | null;
   deleted?: boolean | null;
@@ -59,9 +61,11 @@ export const notes$ = observable(
 // up when there's a connection. No manual push/pull, no outbox.
 export function addNote(text: string) {
   const id = Crypto.randomUUID();
-  // Stamp created_at locally so the note sorts correctly (newest-first) *immediately*,
-  // before it syncs. The DB's handle_times trigger sets the authoritative value on the server.
-  notes$[id].set({ id, text, created_at: new Date().toISOString() });
+  // Do NOT set created_at here. Legend-State uses the ABSENCE of created_at to know a row is
+  // new (→ INSERT). If we stamp it ourselves it assumes the row already exists and issues an
+  // UPDATE that matches 0 server rows — the note silently never syncs. A new note still sorts
+  // to the top because the list treats a missing created_at as newest (the `?? '~'` in App.tsx).
+  notes$[id].set({ id, text });
 }
 
 // Soft-delete (tombstone) — also syncs.
