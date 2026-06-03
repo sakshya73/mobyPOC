@@ -17,6 +17,7 @@ import {
   View,
 } from 'react-native';
 import { PowerSyncContext, useQuery, useStatus } from '@powersync/react-native';
+import { useNetInfo } from '@react-native-community/netinfo';
 import { addNote, connectPowerSync, db, deleteNote, type Note } from './state';
 import { addPhotoNote, mediaPublicUrl, retryPendingUploads } from './media';
 import { NoteCard } from './NoteCard';
@@ -27,14 +28,23 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-// PowerSync closes its idle sync WebSocket after ~30s offline and reconnects — expected behaviour, not
-// a failure. Silence the dev-only LogBox red screen so it doesn't look like a crash during the demo.
-LogBox.ignoreLogs(['No data received on WebSocket']);
+// While offline, PowerSync repeatedly fails to open / idle-closes its sync WebSocket and then retries —
+// expected behaviour, not a crash. Silence the dev-only LogBox red screens so they don't interrupt the
+// offline demo (real sync errors like auth/sync-rule failures still surface).
+LogBox.ignoreLogs([
+  /PowerSyncDatabase.*[Ww]eb[Ss]ocket/,
+  'No data received on WebSocket',
+  'Failed to create websocket connection',
+]);
 
 // Photo is wired (image button → picker → Supabase Storage). Voice stays parked behind voiceComingSoon.
-function PulsingDot({ color = '#4ade80' }: { color?: string }) {
+function PulsingDot({ color = '#4ade80', pulse = true }: { color?: string; pulse?: boolean }) {
   const a = useRef(new Animated.Value(0.35)).current;
   useEffect(() => {
+    if (!pulse) {
+      a.setValue(1); // static dot when not "live" (offline)
+      return;
+    }
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(a, { toValue: 1, duration: 850, useNativeDriver: true }),
@@ -43,8 +53,8 @@ function PulsingDot({ color = '#4ade80' }: { color?: string }) {
     );
     loop.start();
     return () => loop.stop();
-  }, [a]);
-  return <Animated.View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: color, opacity: a }} />;
+  }, [a, pulse]);
+  return <Animated.View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: color, opacity: pulse ? a : 1 }} />;
 }
 
 function Screen() {
@@ -62,6 +72,10 @@ function Screen() {
      ORDER BY replace(n.created_at, 'T', ' ') DESC, n.id DESC`,
   );
   const status = useStatus();
+  // Device-level connectivity straight from the OS (NetInfo) — instant and accurate, unlike PowerSync's
+  // sync-connection state which lags. Treat the initial `null` as online; only `false` means offline.
+  const net = useNetInfo();
+  const online = net.isConnected !== false;
 
   // Per-note sync state: a note stays "pending" until its local write leaves PowerSync's upload queue
   // (i.e. has actually been uploaded). Read-only peek at the CRUD queue; refresh when notes/status change.
@@ -76,9 +90,12 @@ function Screen() {
     return () => {
       cancelled = true;
     };
-  }, [notes, status]);
+    // Depend on the concrete status fields (not the whole object) so this reliably re-runs the moment
+    // the queue drains — uploading flips false / lastSyncedAt advances — and the "Pending" tags clear.
+  }, [notes, status.connected, status.dataFlowStatus?.uploading, status.lastSyncedAt]);
 
-  // Re-upload anything captured offline: once we reconnect, and whenever the app returns to foreground.
+  // Re-upload anything captured offline (media goes to Supabase Storage over HTTP). Triggered on
+  // PowerSync reconnect, on app foreground, and on the NetInfo offline→online transition below.
   useEffect(() => {
     if (status.connected) void retryPendingUploads();
   }, [status.connected]);
@@ -89,14 +106,34 @@ function Screen() {
     return () => sub.remove();
   }, []);
 
-  // Header pill, driven by PowerSync's live sync status.
+  // Reconnect the instant the OS reports the network is back. PowerSync won't revive a connection that
+  // died when the network dropped, so on the offline→online transition we force a FRESH one
+  // (disconnect → connect) and kick the media retry — event-driven, no polling, no manual reload.
+  const wasOnline = useRef<boolean | null>(null);
+  useEffect(() => {
+    const isOnline = net.isConnected;
+    if (isOnline && wasOnline.current === false) {
+      (async () => {
+        try {
+          await db.disconnect();
+        } catch {
+          /* ignore */
+        }
+        connectPowerSync();
+        void retryPendingUploads();
+      })();
+    }
+    wasOnline.current = isOnline;
+  }, [net.isConnected]);
+
+  // Header pill: device connectivity (NetInfo, instant) decides Offline; PowerSync's sync state decides
+  // Syncing vs Synced once we're online.
   const flow = status.dataFlowStatus;
-  const pill =
-    !status.connected || flow?.downloadError
-      ? { label: 'Offline', color: '#fbbf24', icon: 'cloud-offline' as const }
-      : flow?.uploading || flow?.downloading
-        ? { label: 'Syncing', color: '#bfdbfe', icon: 'sync' as const }
-        : { label: 'Synced', color: '#86efac', icon: 'checkmark-circle' as const };
+  const pill = !online
+    ? { label: 'Offline', color: '#fbbf24', icon: 'cloud-offline' as const }
+    : !status.connected || flow?.uploading || flow?.downloading || flow?.downloadError
+      ? { label: 'Syncing', color: '#bfdbfe', icon: 'sync' as const }
+      : { label: 'Synced', color: '#86efac', icon: 'checkmark-circle' as const };
 
   const onAdd = () => {
     const body = text.trim();
@@ -131,8 +168,8 @@ function Screen() {
         </View>
         <View style={styles.chips}>
           <View style={styles.chip}>
-            <PulsingDot />
-            <Text style={styles.chipText}>Live</Text>
+            <PulsingDot color={online ? '#4ade80' : '#fbbf24'} pulse={online} />
+            <Text style={styles.chipText}>{online ? 'Live' : 'Paused'}</Text>
           </View>
           <View style={styles.chip}>
             <Ionicons name="server-outline" size={12} color="rgba(255,255,255,0.9)" />

@@ -54,6 +54,10 @@ export const db = new PowerSyncDatabase({
 
 // 3) Start syncing. connect() is fire-and-forget — the backend connector lives in PowerSyncConnector.ts.
 export function connectPowerSync() {
+  // Default WebSocket transport — it detects going offline quickly, so the header flips to Offline
+  // promptly (HTTP streaming lagged on that). Offline connection errors are dev noise, suppressed via
+  // LogBox in App.tsx. App.tsx also re-issues connect() while disconnected so reconnection is prompt
+  // without an app restart (PowerSync can otherwise stay disconnected after the network returns).
   db.connect(connector);
 }
 
