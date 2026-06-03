@@ -6,13 +6,13 @@ Firebase SQL Connect (see `HOW_IT_WORKS_POC1.md`, `HOW_IT_WORKS_POC2.md`, `POC3_
 
 ## TL;DR
 
-> **Mobile** — Expo (React Native) · Glue Stack · **PowerSync** (on‑device SQLite) · React Native Vision Camera · expo‑location · expo‑notifications · i18next · **Zustand** (UI state)
+> **Mobile** — Expo (React Native) · NativeWind · **PowerSync** (on‑device SQLite) · React Native Vision Camera · expo‑location · expo‑notifications · i18next · **Zustand** (UI state)
 > **Backend** — **NestJS** (Cloud Run) · **Supabase** (Postgres + Auth + Storage) · **PowerSync Cloud**
 > **Web** — Next.js  ·  **Cross‑cutting** — FCM · Google Maps Places · Gemini/Whisper (transcription)
 
 In one line: **this is "Supabase with the offline you wished it had."** Supabase gives the managed
 Postgres + Auth + Storage velocity you asked for; **PowerSync** adds the offline‑first **and** realtime
-that Supabase lacks natively — on the GeekyAnts COE (NestJS / Next.js / Expo), aligned to your GCP/Firebase team.
+that Supabase lacks natively. Backend in NestJS, web in Next.js, mobile in Expo — aligned to your GCP/Firebase team.
 
 ## What the stack must deliver (from the spec + the eval)
 
@@ -39,9 +39,9 @@ Supabase has **no native offline in 2026** — you pair it with a sync engine. O
 
 | Layer | Pick | Why |
 |---|---|---|
-| Mobile shell | **Expo (RN)**, dev build | COE standard; dev build needed for native (SQLite, camera, location) |
-| Mobile UI | **Glue Stack** | COE standard |
-| UI state | **Zustand** | COE standard; lightweight (see state section) |
+| Mobile shell | **Expo (RN)**, dev build | Cross-platform; dev build needed for native modules (SQLite, camera, location) |
+| Mobile UI | **NativeWind** (or Tamagui) | Tailwind-style RN styling, ubiquitous; Tamagui if you want universal web+native components |
+| UI state | **Zustand** | Best-in-class lightweight client state; UI state only (see state section) |
 | Local DB + sync | **PowerSync** (`@powersync/op-sqlite`) | Offline‑first + realtime in one engine |
 | Camera | **react‑native‑vision‑camera** | Custom photo/video, flash, zoom, future annotation |
 | Media upload | **expo‑file‑system** streaming + presigned URLs + **expo‑background‑task** | Background, retryable, offline‑durable |
@@ -49,7 +49,7 @@ Supabase has **no native offline in 2026** — you pair it with a sync engine. O
 | Location | **expo‑location** + **expo‑task‑manager** | Geofenced clock‑in + 5‑min background tracking |
 | Push | **expo‑notifications + FCM** | COE/eval decision; clear token on logout |
 | i18n | **react‑i18next** | EN → ES → FR |
-| Backend | **NestJS** (TypeScript, typed client SDK) on **Cloud Run** | COE standard; control plane + business logic; GCP‑hosted |
+| Backend | **NestJS** (TypeScript, typed client SDK) on **Cloud Run** | Structured + DI + a generated typed SDK — scales with a team; control plane + business logic. (Hono / Supabase Edge Functions if you want lighter) |
 | Database | **Postgres** via **Supabase** | Relational; managed; the Postgres PowerSync taps |
 | Sync service | **PowerSync Cloud** | Managed; self‑hostable later |
 | Auth | **Supabase Auth** | Passwordless email OTP native; phone OTP via Twilio |
@@ -113,15 +113,15 @@ graph TB
 | Web admin (tenant/user/project) | Next.js + NestJS typed SDK |
 | Address autocomplete | Google Maps Places API |
 
-## How it fits the COE (and answers "do we need a separate pub/sub?")
+## The backend's role — data plane vs control plane (and "do we need a separate pub/sub?")
 
-You **keep NestJS + the typed‑SDK pattern.** PowerSync slots in beside it as a second plane:
+Use **NestJS + a generated typed SDK.** PowerSync slots in beside it as a second plane:
 
 - **PowerSync = the data plane** — the synced tables (projects, notes, photo metadata, time entries,
   contacts). Reads stream into SQLite; writes queue and the **upload connector POSTs to NestJS**, which
   validates, applies **idempotency keys**, enforces tenant rules, writes Postgres, and fires AI/notifications.
 - **NestJS = the control plane** — auth, presigned URLs, AI jobs, admin/web APIs, and the PowerSync upload
-  endpoint. The COE's typed SDK is unchanged.
+  endpoint. The typed SDK is unchanged.
 - **Realtime is free** from PowerSync's stream → **no Socket.IO, no separate pub/sub to build.**
 
 ## State management — Zustand vs Legend‑State (they're different layers)
