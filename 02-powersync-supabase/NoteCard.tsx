@@ -14,7 +14,7 @@ type Props = {
 
 // One feed card: avatar + author + time, the sync/upload status, the body (photo / voice / text),
 // and a type chip. Long-press to (soft-)delete. Purely presentational — every value comes via props,
-// so it has no idea Legend-State or Supabase exist. That separation is what keeps the sync logic
+// so it has no idea PowerSync or Supabase exist. That separation is what keeps the sync logic
 // (state.ts / media.ts) testable and the UI dumb.
 export function NoteCard({ item, mediaUri, uploading, pending, onDelete }: Props) {
   const [bg, fg] = avatarColor(item.id);

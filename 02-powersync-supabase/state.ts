@@ -10,7 +10,7 @@ import { PowerSyncDatabase, Schema, Table, column, createBaseLogger, LogLevel } 
 import { OPSqliteOpenFactory } from '@powersync/op-sqlite';
 import { connector, supabase } from './PowerSyncConnector';
 
-export { supabase }; // re-export from one place (the upcoming media module will import it here)
+export { supabase }; // re-export from one place (media.ts imports the Supabase client from here)
 
 // PowerSync logging in the Metro console. WARN surfaces real sync issues without DEBUG's spam —
 // set LogLevel.DEBUG temporarily when diagnosing connection/sync problems.
@@ -41,6 +41,7 @@ export type Note = {
   created_at?: string | null;
   updated_at?: string | null;
   deleted?: number | null; // 0 | 1
+  local_uri?: string | null; // NOT a notes column — joined in from the local-only local_media table
 };
 
 // 2) The on-device PowerSync database (SQLite via @powersync/op-sqlite). We name the OPSqliteOpenFactory

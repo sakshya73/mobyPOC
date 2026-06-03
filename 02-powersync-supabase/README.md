@@ -60,6 +60,12 @@ against the local DB, and the queue drains on reconnect.
 into the app; notes typed in the app appear in Postgres). Offline writes queue locally and drain on
 reconnect. Soft-deletes (`deleted = 1`) propagate as tombstones.
 
-🚧 **Media is the next step.** Photo capture/display will reuse POC 1's native streaming upload to
-Supabase Storage, with the note→file-URI map kept in the `local_media` *local-only* SQLite table (the
-PowerSync equivalent of POC 1's persisted `localMedia$`). The buttons are stubs until then.
+✅ **Photo capture + display** — the image button picks a photo, writes the note row + a `local_media`
+row (instant on-device display), and streams the blob to Supabase Storage via POC 1's native
+`File.upload()`; the `storage_path` pointer then syncs so other devices fetch from Storage. The
+note→file-URI map lives in the `local_media` *local-only* SQLite table (the PowerSync equivalent of POC
+1's persisted `localMedia$`), LEFT-JOINed into the read query. Verified on the simulator: a photo note
+streamed down from Postgres renders from its public URL. Voice stays parked behind `voiceComingSoon`.
+
+That brings POC 2 to **parity with POC 1** — the only remaining difference is the sync engine itself,
+which is exactly the comparison this POC exists to make.

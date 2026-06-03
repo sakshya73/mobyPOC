@@ -4,6 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef, useState } from 'react';
 import {
   Animated,
+  AppState,
   FlatList,
   KeyboardAvoidingView,
   LayoutAnimation,
@@ -16,6 +17,7 @@ import {
 } from 'react-native';
 import { PowerSyncContext, useQuery, useStatus } from '@powersync/react-native';
 import { addNote, connectPowerSync, db, deleteNote, type Note } from './state';
+import { addPhotoNote, mediaPublicUrl, retryPendingUploads } from './media';
 import { NoteCard } from './NoteCard';
 import { voiceComingSoon } from './ui';
 import { styles } from './styles';
@@ -24,7 +26,7 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-// Media (photo/voice) is wired in a later step — buttons are stubs for now.
+// Photo is wired (image button → picker → Supabase Storage). Voice stays parked behind voiceComingSoon.
 function PulsingDot({ color = '#4ade80' }: { color?: string }) {
   const a = useRef(new Animated.Value(0.35)).current;
   useEffect(() => {
@@ -45,10 +47,27 @@ function Screen() {
 
   // Live query over LOCAL SQLite — re-renders on ANY change, whether a local write or a row streamed
   // in from the PowerSync service. The UI never touches the network. (Compare to POC 1's use$(notes$).)
+  // LEFT JOIN the local-only local_media table so each note carries its on-device file URI (if any).
+  // The query watches BOTH tables, so the photo appears the instant createPhotoNote inserts the URI.
   const { data: notes = [] } = useQuery<Note>(
-    'SELECT * FROM notes WHERE deleted = 0 OR deleted IS NULL ORDER BY created_at DESC, id DESC',
+    `SELECT n.*, m.uri AS local_uri
+     FROM notes n
+     LEFT JOIN local_media m ON m.id = n.id
+     WHERE n.deleted = 0 OR n.deleted IS NULL
+     ORDER BY n.created_at DESC, n.id DESC`,
   );
   const status = useStatus();
+
+  // Re-upload anything captured offline: once we reconnect, and whenever the app returns to foreground.
+  useEffect(() => {
+    if (status.connected) void retryPendingUploads();
+  }, [status.connected]);
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (s) => {
+      if (s === 'active') void retryPendingUploads();
+    });
+    return () => sub.remove();
+  }, []);
 
   // Header pill, driven by PowerSync's live sync status.
   const flow = status.dataFlowStatus;
@@ -65,6 +84,11 @@ function Screen() {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     void addNote(body);
     setText('');
+  };
+
+  const onPhoto = () => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    void addPhotoNote();
   };
 
   return (
@@ -117,15 +141,27 @@ function Screen() {
             <Text style={styles.emptyHint}>Add a note below — it's written to local SQLite and synced by PowerSync.</Text>
           </View>
         }
-        renderItem={({ item }) => (
-          <NoteCard item={item} uploading={false} pending={false} onDelete={() => void deleteNote(item.id)} />
-        )}
+        renderItem={({ item }) => {
+          // Show the local file immediately on this device; other devices fetch from the Storage URL.
+          // "Uploading" = a photo whose blob hasn't landed in Storage yet (storage_path still null).
+          const uploading = item.media_type === 'photo' && !item.storage_path;
+          const mediaUri = item.local_uri ?? (item.storage_path ? mediaPublicUrl(item.storage_path) : undefined);
+          return (
+            <NoteCard
+              item={item}
+              mediaUri={mediaUri}
+              uploading={uploading}
+              pending={false}
+              onDelete={() => void deleteNote(item.id)}
+            />
+          );
+        }}
       />
 
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={styles.inputBar}>
           <View style={styles.inputWrap}>
-            <Pressable onPress={voiceComingSoon} hitSlop={8}>
+            <Pressable onPress={onPhoto} hitSlop={8}>
               <Ionicons name="image-outline" size={22} color="#cbd5e1" />
             </Pressable>
             <Pressable onPress={voiceComingSoon} hitSlop={8}>
