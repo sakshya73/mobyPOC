@@ -59,6 +59,11 @@ layer — never the blob. Voice capture is wired in `media.ts` (`addVoiceNote`) 
   a small retry-with-backoff for genuine network blips.
 - **After adding/removing a native module, `expo start --clear`.** Plain HMR corrupts the bundle graph
   (a phantom `undefined is not a function` that survives every edit until a clean rebuild).
+- **Offline media survives restarts.** `localMedia$` (note id → local file path) is **persisted**, so a
+  photo captured with no signal still uploads after an app restart, on reconnect (`retryPendingUploads`
+  fires when `sync.error` clears, not just on app-foreground).
+- **Un-synced notes sort to the top via a local order counter,** not `created_at` (which they don't have
+  until the server sets it). A missing timestamp means *newest*, not oldest.
 
 ## Feel notes (fill in after building)
 - Lines of sync code: _~_

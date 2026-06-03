@@ -33,6 +33,10 @@ GPS. Voice capture is coded in `media.ts` but **parked** (see Gotchas). Just the
 - **Changed a native module / `app.json` plugin? Kill Metro and `expo start --clear`.** HMR on top of a
   native-module change wedges the bundle with a phantom `undefined is not a function` that survives edits.
 - **expo-audio** is installed but **not imported** (voice parked); re-enable via a dev build later.
+- **Offline media must persist.** `localMedia$` (id → file URI) is persisted (not in-memory) so offline
+  photos upload after a restart; `retryPendingUploads` runs on reconnect (sync.error clears) + foreground.
+- **Sort un-synced notes by a local order counter** (`localOrder$` in state.ts) — they have no created_at
+  yet, so missing-timestamp must rank as newest (top), not oldest.
 
 ## Run
 `pnpm install && pnpm exec expo start` — needs Supabase creds in `config.ts`, and both SQL files run.
