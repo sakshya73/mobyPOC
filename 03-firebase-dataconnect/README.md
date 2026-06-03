@@ -1,18 +1,20 @@
-# POC 3 — Firebase Data Connect
+# POC 3 — Firebase (evaluated, not built)
 
-**Status:** scaffolded, build pending (we build POC 1 first).
+**Outcome: ruled out for Moby.** Firebase has no single product that is **relational + offline +
+realtime**: SQL Connect is relational but **online-only (no realtime)**; Firestore is offline+realtime
+but **NoSQL**. Full reasoning: [`../POC3_FIREBASE_FINDINGS.md`](../POC3_FIREBASE_FINDINGS.md).
 
-## Plan
-Expo app + **Firebase Data Connect** (Google's Postgres-backed Firebase, with a GraphQL layer).
-Same minimal list/add UI as POC 1 — only the data/sync layer differs.
+## What's in this folder
+A **viability spike**, kept as evidence. It proves Firebase **SQL Connect** (renamed from Data Connect)
+runs in React Native — officially unsupported, but `App.tsx` ran a real query + mutation against the
+local Data Connect emulator from Expo Go. The blocker was never RN; it's the missing realtime/offline model.
 
-## Stack (planned)
-- Expo (React Native) + TypeScript
-- Firebase Data Connect (Cloud SQL Postgres + generated GraphQL SDK)
+- `App.tsx` — the spike: `firebase/data-connect` query + mutation, with a live log on screen
+- `dataconnect/` — schema (`Note`), connector (`ListNotes` / `CreateNote`), service config
+- `firebase.json` / `.firebaserc` — emulator config (PGLite, port 9399; `demo-moby` project)
 
-## What it will demonstrate
-Whether Firebase Data Connect's relational + offline + realtime story is competitive with the
-Supabase options — relevant because the client leans GCP/Firebase (and needs FCM anyway).
-This is the newest of the three, so the offline story is the key thing to validate.
-
-> This README + the CLAUDE.md will be expanded when the POC is built.
+**Run it:**
+```bash
+npx firebase-tools emulators:start --only dataconnect --project demo-moby   # emulator on :9399
+npx expo start                                                              # then open in Expo Go
+```

@@ -8,7 +8,9 @@ for Moby's MVP. (Requested by the client to evaluate options before committing.)
 |---|--------|---------------|
 | 1 | `01-legend-supabase` | Legend-State `syncedSupabase` — offline + realtime in one wiring |
 | 2 | `02-powersync-supabase` | PowerSync — on-device SQLite ↔ Supabase Postgres |
-| 3 | `03-firebase-dataconnect` | Firebase Data Connect — Postgres + GraphQL |
+| 3 | `03-firebase-dataconnect` | Firebase SQL Connect — **evaluated & ruled out** (relational, but no offline/realtime) |
+
+> **POC 3 was evaluated, not built.** Firebase has no single product that is relational *and* offline *and* realtime (SQL Connect = relational/online-only; Firestore = offline+realtime/NoSQL), so it doesn't fit Moby. Reasoning + the RN spike: [`POC3_FIREBASE_FINDINGS.md`](POC3_FIREBASE_FINDINGS.md).
 
 **Baseline reference:** the hand-rolled **slice** (Expo + SQLite + NestJS), kept in the parent
 Moby workspace — shows what "owning the sync yourself" looks like.
