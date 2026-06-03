@@ -1,0 +1,16 @@
+# PowerSync Sync Config (Sync Streams, edition 3 — the modern format; legacy "Sync Rules" used
+# bucket_definitions). Decides WHAT each client downloads into its local SQLite DB. No auth in this
+# POC, so every client syncs ALL notes. Real multi-tenant: `query: SELECT * FROM notes WHERE
+# company_id = auth.user_id()`.
+#
+# DEPLOY VIA THE CLI (the dashboard editor didn't take for us — got PSYNC_S2302 "no sync config"):
+#   npx powersync@latest login
+#   npx powersync@latest link cloud --instance-id=6a2009a1deeddd0df601ca88 --project-id=6a20099f2e82bc0007790c4d
+#   # put this file at powersync/sync-config.yaml, then:
+#   npx powersync@latest deploy sync-config
+config:
+  edition: 3
+streams:
+  notes:
+    auto_subscribe: true
+    query: SELECT * FROM notes
