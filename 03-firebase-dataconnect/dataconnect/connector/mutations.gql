@@ -1,0 +1,4 @@
+# `note_insert` is the auto-generated insert mutation for the Note @table type; it returns the new id.
+mutation CreateNote($text: String!) @auth(level: PUBLIC) {
+  note_insert(data: { text: $text })
+}

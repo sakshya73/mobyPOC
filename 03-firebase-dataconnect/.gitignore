@@ -26,6 +26,11 @@ npm-debug.*
 yarn-debug.*
 yarn-error.*
 
+# Firebase Data Connect emulator (generated schema + logs)
+**/.dataconnect/
+*-debug.log
+.firebase/
+
 # macOS
 .DS_Store
 *.pem

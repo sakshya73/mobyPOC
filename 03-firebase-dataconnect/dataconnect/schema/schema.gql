@@ -1,0 +1,5 @@
+# A @table type becomes a Postgres table in Cloud SQL.
+# Data Connect auto-adds an `id: UUID!` primary key (default uuidV4()) if you don't declare one.
+type Note @table {
+  text: String!
+}

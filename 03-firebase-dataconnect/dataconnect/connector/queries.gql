@@ -1,0 +1,8 @@
+# @auth(level: PUBLIC) lets the no-auth emulator/client run this. `notes` is the auto-generated
+# list field for the Note @table type.
+query ListNotes @auth(level: PUBLIC) {
+  notes {
+    id
+    text
+  }
+}
