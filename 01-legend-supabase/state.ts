@@ -57,14 +57,24 @@ export const notes$ = observable(
   }),
 );
 
+// Local-only display order. We deliberately don't stamp created_at (that would make Legend-State
+// UPDATE instead of INSERT — see addNote), so a brand-new note has no timestamp to sort by yet.
+// This monotonic counter floats just-added notes to the top (newest first) until the server's
+// created_at lands. In-memory only — never synced (a local sequence is meaningless on another device).
+let orderSeq = 0;
+export const localOrder$ = observable<Record<string, number>>({});
+export function stampOrder(id: string) {
+  localOrder$[id].set(++orderSeq);
+}
+
 // Add a note. We just write locally — Legend-State persists it offline and syncs it
 // up when there's a connection. No manual push/pull, no outbox.
 export function addNote(text: string) {
   const id = Crypto.randomUUID();
+  stampOrder(id); // float to the top now; we can't use created_at (see below)
   // Do NOT set created_at here. Legend-State uses the ABSENCE of created_at to know a row is
   // new (→ INSERT). If we stamp it ourselves it assumes the row already exists and issues an
-  // UPDATE that matches 0 server rows — the note silently never syncs. A new note still sorts
-  // to the top because the list treats a missing created_at as newest (the `?? '~'` in App.tsx).
+  // UPDATE that matches 0 server rows — the note silently never syncs.
   notes$[id].set({ id, text });
 }
 
