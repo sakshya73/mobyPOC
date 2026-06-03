@@ -13,7 +13,9 @@ GPS. Voice capture is coded in `media.ts` but **parked** (see Gotchas). Just the
 - `config.ts` — Supabase URL + publishable key (do not commit real values)
 - `state.ts` — the Legend-State observable + `syncedSupabase` wiring (**the heart**)
 - `media.ts` — photo capture + Supabase Storage upload (metadata syncs, the blob does not)
-- `App.tsx` — list/add UI + photo button (copied from `../../slice`)
+- `App.tsx` — the screen (header, list, input) wired to the observable
+- `NoteCard.tsx` — one presentational feed card; `ui.ts` (pure helpers) + `styles.ts` (StyleSheet)
+- `HOW_IT_WORKS.md` — full walkthrough + diagrams (point newcomers here)
 - `supabase.sql` — `notes` table + Realtime setup (run **first** in the Supabase SQL editor)
 - `supabase-storage.sql` — `media` bucket + `media_type`/`storage_path` columns (run **second**)
 
